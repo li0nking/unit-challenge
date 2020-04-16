@@ -1,0 +1,342 @@
+{
+    "Parameters": {
+        "LambdaFunctionsZipFile": {
+            "Type": "String",
+            "Default": "unit-challenge-function.zip",
+            "Description": "Zip file with Lambda function to be executed after s3 notification"
+        },
+        "ChallengeBucket": {
+            "Type": "String",
+            "Default": "unit-challenge-ricardo",
+            "Description": "Bucket name used in the challenge"
+        },
+        "OAuthToken": {
+            "Type": "String",
+            "Default": "3898b18288a1475ab9ed8e7835b8432b7e12074e",
+            "Description": "Guit OAuthToken"
+        }
+    },
+    "Resources": {
+        "CodePipelineArtifactStoreBucket": {
+            "Type": "AWS::S3::Bucket",
+            "Properties": {
+                "BucketName": {
+                    "Ref": "ChallengeBucket"
+                }
+            }
+        },
+        "AppPipeline": {
+            "Type": "AWS::CodePipeline::Pipeline",
+            "Properties": {
+                "Name": "github-events-pipeline",
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "CodePipelineServiceRole",
+                        "Arn"
+                    ]
+                },
+                "Stages": [
+                    {
+                        "Name": "Source",
+                        "Actions": [
+                            {
+                                "Name": "SourceAction",
+                                "ActionTypeId": {
+                                    "Category": "Source",
+                                    "Owner": "ThirdParty",
+                                    "Version": 1,
+                                    "Provider": "GitHub"
+                                },
+                                "OutputArtifacts": [
+                                    {
+                                        "Name": "SourceOutput"
+                                    }
+                                ],
+                                "Configuration": {
+                                    "Branch": "master",
+                                    "OAuthToken": {
+                                        "Ref": "OAuthToken"
+                                    },
+                                    "Owner": "li0nking",
+                                    "PollForSourceChanges": "true",
+                                    "Repo": "unit-challenge"
+                                },
+                                "RunOrder": 1
+                            }
+                        ]
+                    },
+                    {
+                        "Name": "Deploy",
+                        "Actions": [
+                            {
+                                "Name": "Deploy",
+                                "InputArtifacts": [
+                                    {
+                                        "Name": "SourceOutput"
+                                    }
+                                ],
+                                "ActionTypeId": {
+                                    "Category": "Deploy",
+                                    "Owner": "AWS",
+                                    "Version": 1,
+                                    "Provider": "S3"
+                                },
+                                "Configuration": {
+                                    "BucketName": {
+                                        "Ref": "ChallengeBucket"
+                                    },
+                                    "Extract": "true"
+                                },
+                                "RunOrder": 1,
+                                "OutputArtifacts": []
+                            }
+                        ]
+                    }
+                ],
+                "ArtifactStore": {
+                    "Type": "S3",
+                    "Location": {
+                        "Ref": "ChallengeBucket"
+                    }
+                }
+            }
+        },
+        "ProcessS3FileTextRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "AllowLambdaReadWriteS3AndLogs",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetObject",
+                                        "s3:PutObject",
+                                        "s3:DeleteObject"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:aws:s3:::${ChallengeBucket}/*"
+                                    }
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "CodePipelineServiceRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "codepipeline.amazonaws.com"
+                                ]
+                            },
+                            "Action": "sts:AssumeRole"
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "AWSAllowS3Write",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:getObject",
+                                        "s3:PutObject"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:aws:s3:::${ChallengeBucket}/*"
+                                    }
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "ProcessS3FileTextFunction": {
+            "Type": "AWS::Lambda::Function",
+            "DependsOn": "myWaitCondition",
+            "Properties": {
+                "Code": {
+                    "S3Bucket": {
+                        "Ref": "ChallengeBucket"
+                    },
+                    "S3Key": {
+                        "Ref": "LambdaFunctionsZipFile"
+                    }
+                },
+                "Handler": "index.handler",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "ProcessS3FileTextRole",
+                        "Arn"
+                    ]
+                },
+                "Runtime": "nodejs12.x",
+                "Timeout": 5
+            }
+        },
+        "AllowLambdaS3NotificationsRole": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": [
+                                    "lambda.amazonaws.com"
+                                ]
+                            },
+                            "Action": [
+                                "sts:AssumeRole"
+                            ]
+                        }
+                    ]
+                },
+                "Path": "/",
+                "Policies": [
+                    {
+                        "PolicyName": "AllowGetPutBucketNotification",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "s3:GetBucketNotification",
+                                        "s3:PutBucketNotification"
+                                    ],
+                                    "Resource": {
+                                        "Fn::Sub": "arn:aws:s3:::${ChallengeBucket}"
+                                    }
+                                },
+                                {
+                                    "Effect": "Allow",
+                                    "Action": [
+                                        "logs:CreateLogGroup",
+                                        "logs:CreateLogStream",
+                                        "logs:PutLogEvents"
+                                    ],
+                                    "Resource": "arn:aws:logs:*:*:*"
+                                }
+                            ]
+                        }
+                    }
+                ]
+            }
+        },
+        "AddS3LambdaNotificationFunction": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Handler": "index.lambda_handler",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "AllowLambdaS3NotificationsRole",
+                        "Arn"
+                    ]
+                },
+                "Code": {
+                    "ZipFile": "\nfrom __future__ import print_function\nimport json\nimport boto3\nimport cfnresponse\n\nSUCCESS = \"SUCCESS\"\nFAILED = \"FAILED\"\n\nprint('Loading function')\ns3 = boto3.resource('s3')\n\ndef lambda_handler(event, context):\n    print(\"Received event: \" + json.dumps(event, indent=2))\n    responseData={}\n    try:\n        if event['RequestType'] == 'Create' or event['RequestType'] == 'Update':\n            print(\"Request Type:\",event['RequestType'])\n            LambdaArn=event['ResourceProperties']['LambdaArn']\n            Bucket=event['ResourceProperties']['Bucket']\n            add_notification(LambdaArn, Bucket)\n            responseData={'Bucket':Bucket}\n            print(\"Sending response to custom resource\")\n        responseStatus = 'SUCCESS'\n    except Exception as e:\n        print('Failed to process:', e)\n        responseStatus = 'FAILURE'\n        responseData = {'Failure': 'Something bad happened.'}\n    cfnresponse.send(event, context, responseStatus, responseData)\n\ndef add_notification(LambdaArn, Bucket):\n    bucket_notification = s3.BucketNotification(Bucket)\n    response = bucket_notification.put(\n      NotificationConfiguration={\n        'LambdaFunctionConfigurations': [\n          {\n              'LambdaFunctionArn': LambdaArn,\n              'Events': [\n                  's3:ObjectCreated:*'\n              ],\n              'Filter': {\n                  'Key':\n                  {\n                      'FilterRules': [ \n                          {\n                              'Name': \"suffix\",\n                              'Value': \".txt\"\n                          } \n                      ]\n                  }\n              }\n          }\n        ]\n      }\n    )\n    print(\"Put request completed....\")\n"
+                },
+                "Runtime": "python3.6",
+                "Timeout": 50
+            }
+        },
+        "LambdaInvokePermission": {
+            "Type": "AWS::Lambda::Permission",
+            "Properties": {
+                "FunctionName": {
+                    "Fn::GetAtt": [
+                        "ProcessS3FileTextFunction",
+                        "Arn"
+                    ]
+                },
+                "Action": "lambda:InvokeFunction",
+                "Principal": "s3.amazonaws.com",
+                "SourceAccount": {
+                    "Ref": "AWS::AccountId"
+                },
+                "SourceArn": {
+                    "Fn::Sub": "arn:aws:s3:::${ChallengeBucket}"
+                }
+            }
+        },
+        "myWaitHandle": {
+            "Type": "AWS::CloudFormation::WaitConditionHandle",
+            "Properties": {}
+        },
+        "myWaitCondition": {
+            "Type": "AWS::CloudFormation::WaitCondition",
+            "DependsOn": "AppPipeline",
+            "Properties": {
+                "Handle": {
+                    "Ref": "myWaitHandle"
+                },
+                "Timeout": "60",
+                "Count": "0"
+            }
+        },
+        "LambdaTrigger": {
+            "Type": "Custom::LambdaTrigger",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "AddS3LambdaNotificationFunction",
+                        "Arn"
+                    ]
+                },
+                "LambdaArn": {
+                    "Fn::GetAtt": [
+                        "ProcessS3FileTextFunction",
+                        "Arn"
+                    ]
+                },
+                "Bucket": {
+                    "Ref": "ChallengeBucket"
+                }
+            }
+        }
+    }
+}
