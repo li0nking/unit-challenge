@@ -4,7 +4,7 @@ AWS Unit challenge repository
 ## Create Stack
 To create the stack just use the template unit-challenge-template.json
 
-Just make sure to use the following authentication token (default):e882ed5baa6f521cf60bd5304ce1eb17c3a7efbc
+Please use the **token** provided in the email on **OAuthToken parameter**.
 
 ## Testing the project
 1. Go to the code pipeline github-events-pipeline
