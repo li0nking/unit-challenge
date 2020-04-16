@@ -12,7 +12,7 @@
         },
         "OAuthToken": {
             "Type": "String",
-            "Default": "3898b18288a1475ab9ed8e7835b8432b7e12074e",
+            "Default": "b32046adb38bea93863fb029c1536ecc4586e1f7",
             "Description": "Guit OAuthToken"
         }
     },
